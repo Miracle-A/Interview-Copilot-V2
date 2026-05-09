@@ -1,0 +1,36 @@
+# Secrets and personal content
+.env
+prompt.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+
+# PyInstaller / build artifacts
+build/
+dist/
+
+# Vendored SDKs / installed packages at project root
+deepgram/
+deepgram_sdk-*.dist-info/
+
+# Logs
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+._*
+Thumbs.db
