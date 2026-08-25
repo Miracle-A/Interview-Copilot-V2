@@ -1,33 +1,110 @@
-from pynput import keyboard
+import logging
+import logging.handlers
+import sys
+import threading
+import webbrowser
 
-from configure import DEEPGRAM_API_KEY
-from transcriber import DeepgramTranscriber
-from gpt_processor import GPTProcessor
+from app.config import load_config
+from app.engine import InterviewEngine
+from app.hotkeys import HotkeyManager
+from app.server import create_app, find_free_port
+
+log = logging.getLogger("app")
 
 
-def on_press(key, transcriber):
+def _setup_logging(log_path):
+    """File log always (the exe runs windowless); console too when one exists."""
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    handler = logging.handlers.RotatingFileHandler(
+        log_path, maxBytes=1_000_000, backupCount=2, encoding="utf-8",
+    )
+    handler.setFormatter(logging.Formatter(
+        "%(asctime)s %(levelname)s %(name)s: %(message)s",
+    ))
+    root.addHandler(handler)
+    if sys.stderr is not None:
+        console = logging.StreamHandler()
+        console.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+        root.addHandler(console)
+
+
+def _say(message: str):
+    if sys.stdout is not None:
+        print(message)
+
+
+def _start_tray(url: str, stop):
+    """System tray icon (best effort): Open + Quit. Returns the icon or None."""
     try:
-        if key.char == '`':
-            transcriber.toggle_transcription()
-    except AttributeError:
-        if key == keyboard.Key.esc:
-            return False
+        import pystray
+        from PIL import Image, ImageDraw
+
+        image = Image.new("RGB", (64, 64), (15, 17, 21))
+        draw = ImageDraw.Draw(image)
+        draw.ellipse((14, 14, 50, 50), fill=(91, 157, 255))
+        icon = pystray.Icon(
+            "interview-copilot", image, "Interview Copilot",
+            menu=pystray.Menu(
+                pystray.MenuItem("Open Interview Copilot",
+                                 lambda: webbrowser.open(url), default=True),
+                pystray.MenuItem("Quit", lambda: stop()),
+            ),
+        )
+        icon.run_detached()
+        return icon
+    except Exception as e:
+        log.info("Tray icon unavailable: %s", e)
+        return None
 
 
 def main():
-    gpt_processor = GPTProcessor()
-    transcriber = DeepgramTranscriber(
-        deepgram_api_key=DEEPGRAM_API_KEY, gpt_processor=gpt_processor
-    )
+    config = load_config()
+    _setup_logging(config.log_path)
+
+    import uvicorn  # imported late so any console message appears immediately
+
+    port = find_free_port()
+    url = f"http://127.0.0.1:{port}"
+
+    engine = InterviewEngine(config, emit=lambda event: None)
+    app = create_app(engine, port)
+    engine.set_emitter(app.state.emit)  # server owns the transport
+    engine.start()
+
+    hotkeys = HotkeyManager(engine, config.hotkey)
+    engine.on_hotkey_change = hotkeys.set_combo
+
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+
+    def stop():
+        server.should_exit = True
+
+    # Open the browser once the server is actually up (lifespan startup).
+    app.state.on_ready = lambda: threading.Thread(
+        target=webbrowser.open, args=(url,), daemon=True,
+    ).start()
+
+    tray = _start_tray(url, stop)
+
+    _say(f"\n  Interview Copilot running at {url}")
+    _say("  Use the tray icon or Ctrl+C here to quit.\n")
+    log.info("Interview Copilot starting at %s (configured=%s)", url, config.configured)
 
     try:
-        with keyboard.Listener(on_press=lambda key: on_press(key, transcriber)) as listener:
-            listener.join()
-    except Exception as e:
-        print(f"Error: {e}")
+        server.run()
+    except KeyboardInterrupt:
+        pass
     finally:
-        transcriber.shutdown()
+        if tray is not None:
+            try:
+                tray.stop()
+            except Exception:
+                pass
+        hotkeys.stop()
+        engine.shutdown()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

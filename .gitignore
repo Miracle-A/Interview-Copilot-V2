@@ -1,6 +1,9 @@
 # Secrets and personal content
 .env
 prompt.txt
+history.json
+profile.json
+settings.json
 
 # Python
 __pycache__/

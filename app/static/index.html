@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Interview Copilot</title>
+<script src="/static/marked.min.js"></script>
+<script src="/static/purify.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1115;
+    --surface: #161a22;
+    --surface-2: #1c212c;
+    --border: #262d3a;
+    --text: #e8eaf0;
+    --dim: #8b93a7;
+    --accent: #5b9dff;
+    --accent-soft: rgba(91, 157, 255, .12);
+    --red: #ff5d5d;
+    --green: #3ecf8e;
+    --amber: #ffb454;
+    --radius: 14px;
+    --font: -apple-system, "Segoe UI", system-ui, Roboto, sans-serif;
+    --mono: "Cascadia Code", Consolas, "SF Mono", monospace;
+    --fs: 16px;
+    --ans: 17px;
+  }
+  html[data-size="large"]  { --fs: 18px; --ans: 20px; }
+  html[data-size="xlarge"] { --fs: 20px; --ans: 23px; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: var(--font); font-size: var(--fs); line-height: 1.55;
+    overflow: hidden;
+  }
+
+  /* ---------- layout ---------- */
+  #shell { display: flex; flex-direction: column; height: 100vh; }
+  header {
+    display: flex; align-items: center; gap: 10px 12px;
+    padding: 10px 18px; border-bottom: 1px solid var(--border);
+    background: rgba(15, 17, 21, .85); backdrop-filter: blur(8px);
+    flex-shrink: 0; flex-wrap: wrap;
+  }
+  .brand { display: flex; align-items: center; gap: 9px; font-weight: 650; font-size: 16px; }
+  .brand .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 12px var(--accent); }
+  .spacer { flex: 1; }
+
+  /* status pill */
+  #statusPill {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 600;
+    background: var(--surface-2); border: 1px solid var(--border); color: var(--dim);
+    transition: all .25s ease; white-space: nowrap;
+  }
+  #statusPill .ind { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); transition: background .2s; }
+  #statusPill.listening { color: #ffb4b4; border-color: rgba(255, 93, 93, .45); background: rgba(255, 93, 93, .08); }
+  #statusPill.listening .ind { background: var(--red); animation: pulse 1.1s ease-in-out infinite; }
+  #statusPill.thinking { color: var(--amber); border-color: rgba(255, 180, 84, .4); background: rgba(255, 180, 84, .07); }
+  #statusPill.thinking .ind { background: var(--amber); animation: spinPulse .8s linear infinite; }
+  #statusPill.answering { color: var(--accent); border-color: rgba(91, 157, 255, .45); background: var(--accent-soft); }
+  #statusPill.answering .ind { background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.55); opacity: .55; } }
+  @keyframes spinPulse { 0%,100% { opacity: .35; } 50% { opacity: 1; } }
+  .hint { color: var(--dim); font-size: 12.5px; }
+  .hint kbd, kbd.keycap {
+    font-family: var(--mono); background: var(--surface-2); border: 1px solid var(--border);
+    border-bottom-width: 2px; border-radius: 5px; padding: 1px 7px; font-size: 12px; color: var(--text);
+  }
+
+  /* health dots */
+  #health { display: flex; gap: 8px; align-items: center; }
+  .hdot { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; font-size: 12px; color: var(--dim); padding: 3px 7px; border-radius: 8px; border: 1px solid transparent; }
+  .hdot:hover { background: var(--surface-2); border-color: var(--border); }
+  .hdot .led { width: 8px; height: 8px; border-radius: 50%; background: #444c5e; }
+  .hdot.ok .led { background: var(--green); }
+  .hdot.error .led { background: var(--red); box-shadow: 0 0 8px var(--red); }
+
+  /* buttons */
+  button {
+    font-family: var(--font); font-size: 13.5px; font-weight: 600;
+    color: var(--text); background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 9px; padding: 8px 15px; cursor: pointer; transition: all .15s ease;
+  }
+  button:hover { border-color: #38445a; background: #222836; }
+  button:active { transform: translateY(1px); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #0b1220; }
+  button.primary:hover { filter: brightness(1.1); }
+  button.danger { color: #ffb4b4; border-color: rgba(255, 93, 93, .4); }
+  button.danger:hover { background: rgba(255, 93, 93, .1); }
+  button.ghost { background: none; border-color: transparent; color: var(--dim); padding: 6px 10px; }
+  button.ghost:hover { color: var(--text); background: var(--surface-2); }
+  button:disabled { opacity: .45; cursor: default; pointer-events: none; }
+  .pill { border-radius: 999px; }
+
+  /* toggle */
+  .toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: var(--dim); user-select: none; white-space: nowrap; }
+  .toggle .tk { width: 34px; height: 19px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); position: relative; transition: background .15s; flex-shrink: 0; }
+  .toggle .tk::after { content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: var(--dim); transition: all .15s; }
+  .toggle.on { color: var(--text); }
+  .toggle.on .tk { background: var(--accent); border-color: var(--accent); }
+  .toggle.on .tk::after { left: 17px; background: #0b1220; }
+
+  /* ---------- the conversation (main area) ---------- */
+  /* big bottom padding gives the newest question room to scroll to the top,
+     so a fresh answer always starts at the first line (no scroll-up needed). */
+  #thread { flex: 1; min-height: 0; overflow-y: auto; padding: 20px 18px 55vh; }
+  #threadInner { max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+  #emptyState { color: var(--dim); font-style: italic; text-align: center; margin-top: 12vh; font-size: 15px; line-height: 1.7; }
+  #emptyState .big { font-style: normal; font-weight: 650; font-size: 18px; color: var(--text); margin-bottom: 8px; }
+
+  .qa { display: flex; flex-direction: column; gap: 8px; }
+  .qa .qq {
+    display: flex; align-items: baseline; gap: 10px;
+    font-size: calc(var(--fs) - 1px); font-weight: 650;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 12px; padding: 10px 14px;
+  }
+  .qa .qq .qn { color: var(--accent); flex-shrink: 0; }
+  .qa .qq .qtext { flex: 1; }
+  .qa .qq.live .qtext { color: var(--dim); font-style: italic; font-weight: 500; }
+  .qa .qq .when { color: var(--dim); font-size: 11.5px; font-weight: 500; white-space: nowrap; }
+  .qa .aa {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 18px; font-size: var(--ans); line-height: 1.6;
+  }
+  .qa .aa.empty { color: var(--dim); font-style: italic; font-size: 15px; }
+  .qa .aa > * + * { margin-top: .6em; }
+  .qa .aa h1, .qa .aa h2, .qa .aa h3 { font-size: 1.05em; margin-top: .8em; }
+  .qa .aa ul, .qa .aa ol { padding-left: 1.35em; }
+  .qa .aa li + li { margin-top: .25em; }
+  .qa .aa strong { color: #fff; }
+  .qa .aa code { font-family: var(--mono); font-size: .88em; background: #10131a; border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; }
+  .qa .aa pre { background: #10131a; border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; overflow-x: auto; }
+  .qa .aa pre code { background: none; border: none; padding: 0; }
+  .qa.live .aa { border-color: rgba(91,157,255,.35); }
+  .qaBar { display: flex; gap: 8px; align-items: center; margin-top: 2px; }
+  .qaBar .meta { color: var(--dim); font-size: 12px; }
+  .qaBar button { font-size: 12px; padding: 4px 12px; }
+  .caret { display: inline-block; width: 8px; height: 1em; background: var(--accent); vertical-align: text-bottom; margin-left: 2px; border-radius: 2px; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* ---------- composer (type a question) ---------- */
+  #composer { flex-shrink: 0; border-top: 1px solid var(--border); background: rgba(15,17,21,.85); padding: 12px 18px; }
+  #composerInner { max-width: 900px; margin: 0 auto; display: flex; gap: 10px; align-items: center; }
+  #askInput {
+    flex: 1; font-family: var(--font); font-size: 15px; color: var(--text);
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 11px;
+    padding: 12px 16px; outline: none;
+  }
+  #askInput:focus { border-color: #38445a; }
+
+  select, input[type=text], input[type=password], textarea {
+    font-family: var(--font); font-size: 14px; color: var(--text);
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px;
+    padding: 9px 12px; width: 100%; outline: none;
+  }
+  select:focus, input:focus, textarea:focus { border-color: #38445a; }
+  textarea { resize: vertical; min-height: 64px; line-height: 1.5; }
+
+  /* segmented control */
+  .seg { display: flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .seg button { border: none; border-radius: 0; flex: 1; background: var(--surface-2); font-size: 13px; padding: 8px 6px; }
+  .seg button.on { background: var(--accent); color: #0b1220; }
+  .seg button:disabled { opacity: .4; }
+
+  /* level meter */
+  .meter { height: 10px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; }
+  .meter .fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--green), var(--amber)); transition: width .09s linear; border-radius: 6px; }
+
+  /* ---------- settings drawer ---------- */
+  #drawer {
+    position: fixed; top: 0; right: -380px; width: 380px; max-width: 92vw; height: 100vh; z-index: 40;
+    background: var(--surface); border-left: 1px solid var(--border);
+    padding: 22px; transition: right .25s ease; display: flex; flex-direction: column; gap: 16px; overflow-y: auto;
+  }
+  #drawer.open { right: 0; box-shadow: -24px 0 60px rgba(0,0,0,.45); }
+  #drawer h3 { font-size: 15px; }
+  #drawer label, .field label { display: block; font-size: 12px; color: var(--dim); font-weight: 600; text-transform: uppercase; letter-spacing: .8px; margin-bottom: 6px; }
+  .field { display: flex; flex-direction: column; }
+  .note { font-size: 12px; color: var(--dim); margin-top: 6px; }
+  #overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 30; opacity: 0; pointer-events: none; transition: opacity .2s; }
+  #overlay.open { opacity: 1; pointer-events: auto; }
+  .modelOpt { display: flex; gap: 10px; align-items: flex-start; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; margin-bottom: 8px; background: var(--surface-2); }
+  .modelOpt.on { border-color: var(--accent); background: var(--accent-soft); }
+  .modelOpt .ml { font-size: 13.5px; font-weight: 650; }
+  .modelOpt .mb { font-size: 12px; color: var(--dim); margin-top: 2px; }
+
+  /* ---------- toasts ---------- */
+  #toasts { position: fixed; top: 16px; right: 16px; z-index: 60; display: flex; flex-direction: column; gap: 8px; max-width: 400px; }
+  .toast { background: var(--surface-2); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 10px; padding: 11px 14px; font-size: 13.5px; box-shadow: 0 8px 30px rgba(0,0,0,.4); animation: slideIn .2s ease; }
+  .toast.error { border-left-color: var(--red); }
+  .toast.ok { border-left-color: var(--green); }
+  .toast .trow { display: flex; gap: 10px; align-items: flex-start; }
+  .toast .ttitle { font-weight: 650; }
+  .toast .tmsg { color: var(--dim); font-size: 12.5px; margin-top: 2px; }
+  .toast .x { margin-left: auto; cursor: pointer; color: var(--dim); font-weight: 700; padding: 0 2px; }
+  .toast .tactions { margin-top: 8px; display: flex; gap: 8px; }
+  .toast .tactions button { font-size: 12px; padding: 4px 12px; }
+  @keyframes slideIn { from { transform: translateX(30px); opacity: 0; } }
+  #connBanner { display: none; text-align: center; font-size: 13px; padding: 7px; background: rgba(255, 180, 84, .12); color: var(--amber); border-bottom: 1px solid rgba(255,180,84,.25); }
+  #connBanner.show { display: block; }
+
+  /* ---------- modals ---------- */
+  .modal { position: fixed; inset: 0; z-index: 50; display: none; align-items: center; justify-content: center; padding: 4vh 4vw; background: rgba(0,0,0,.55); }
+  .modal.open { display: flex; }
+  .modalCard { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); width: min(860px, 100%); max-height: min(88vh, 100%); display: flex; flex-direction: column; gap: 12px; padding: 20px 22px; box-shadow: 0 24px 80px rgba(0,0,0,.55); overflow-y: auto; }
+  .modalCard h3 { font-size: 15px; }
+  .modalBar { display: flex; gap: 10px; align-items: center; flex-shrink: 0; }
+  #convoBody, #savedBody { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding-right: 4px; min-height: 160px; }
+  #savedBody:empty::before { content: "No saved interviews yet. Press “End interview & save” to keep one."; color: var(--dim); font-style: italic; font-size: 13.5px; }
+  .savedRow { display: flex; align-items: center; gap: 8px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; cursor: pointer; }
+  .savedRow:hover { border-color: #38445a; }
+  .savedRow .si { flex: 1; }
+  .savedRow .st { font-weight: 650; }
+  .savedRow .ss { color: var(--dim); font-size: 12px; margin-top: 3px; }
+  .savedRow button { font-size: 12px; padding: 5px 11px; }
+  #promptEditor { flex: 1; resize: none; width: 100%; min-height: 40vh; font-family: var(--mono); font-size: 13px; line-height: 1.55; background: #10131a; border-radius: 10px; padding: 14px 16px; }
+  #promptDirty { font-size: 12px; color: var(--amber); display: none; }
+  #promptDirty.show { display: inline; }
+
+  /* ---------- wizard ---------- */
+  #wizard { position: fixed; inset: 0; z-index: 70; display: none; align-items: center; justify-content: center; padding: 4vh 4vw; background: rgba(10,12,16,.92); backdrop-filter: blur(4px); }
+  #wizard.open { display: flex; }
+  #wizard .wcard { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; width: min(640px, 100%); max-height: 90vh; overflow-y: auto; padding: 26px 28px; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 24px 80px rgba(0,0,0,.6); }
+  #wizard h2.wtitle { font-size: 19px; color: var(--text); margin: 0; }
+  #wizard .wsub { color: var(--dim); font-size: 13.5px; }
+  .wsteps { display: flex; gap: 6px; margin-bottom: 4px; }
+  .wsteps .ws { height: 4px; flex: 1; border-radius: 3px; background: var(--surface-2); }
+  .wsteps .ws.on { background: var(--accent); }
+  details.howto { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; font-size: 13px; }
+  details.howto summary { cursor: pointer; color: var(--accent); font-weight: 600; font-size: 12.5px; }
+  details.howto ol { padding-left: 1.3em; margin-top: 8px; display: flex; flex-direction: column; gap: 4px; color: var(--dim); }
+  details.howto a { color: var(--accent); }
+  .keyrow { display: flex; gap: 8px; }
+  .keyrow input { flex: 1; }
+  .kstatus { font-size: 12.5px; margin-top: 5px; min-height: 17px; }
+  .kstatus.ok { color: var(--green); }
+  .kstatus.bad { color: var(--red); }
+  .costnote { background: rgba(62, 207, 142, .07); border: 1px solid rgba(62, 207, 142, .25); border-radius: 10px; padding: 10px 14px; font-size: 12.5px; color: var(--dim); }
+  .costnote b { color: var(--green); }
+
+  /* ---------- tour ---------- */
+  #tour { position: fixed; inset: 0; z-index: 65; display: none; align-items: center; justify-content: center; background: rgba(10,12,16,.8); }
+  #tour.open { display: flex; }
+  #tour .tcard { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; width: min(480px, 92vw); padding: 26px 28px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 24px 80px rgba(0,0,0,.6); }
+  #tour .tstep { font-size: 12px; color: var(--dim); font-weight: 650; letter-spacing: 1px; text-transform: uppercase; }
+  #tour .tbig { font-size: 17px; font-weight: 650; }
+  #tour .tbody { color: var(--dim); font-size: 14px; }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #2a3140; border-radius: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+</style>
+</head>
+<body>
+<div id="shell">
+  <div id="connBanner">Reconnecting to the app&hellip;</div>
+  <header>
+    <div class="brand"><span class="dot"></span>Interview Copilot</div>
+    <span id="statusPill"><span class="ind"></span><span id="statusLabel">idle</span></span>
+    <span class="hint">press <kbd id="hotkeyHint">`</kbd> to start / stop</span>
+    <span id="autoToggle" class="toggle" title="Hands-free: the app hears when a question ends and answers by itself"><span class="tk"></span>Hands-free</span>
+    <div class="spacer"></div>
+    <div id="health">
+      <span class="hdot" id="hdMic" title="Microphone"><span class="led"></span>🎤</span>
+      <span class="hdot" id="hdDg" title="Transcription"><span class="led"></span>🌐</span>
+      <span class="hdot" id="hdLlm" title="AI"><span class="led"></span>🤖</span>
+    </div>
+    <button id="btnToggle" class="primary pill">Start listening</button>
+    <button id="btnCancel" class="danger pill" style="display:none">Cancel</button>
+    <button id="btnEnd" class="ghost" title="Save this whole conversation as one interview and start fresh">&#10003; End &amp; save</button>
+    <button id="btnSaved" class="ghost" title="Your saved interviews">Saved</button>
+    <button id="btnProfile" class="ghost" title="Your background, the job, your resume">Profile</button>
+    <button id="btnSettings" class="ghost" title="Settings">&#9881;&#65038;</button>
+  </header>
+
+  <div id="thread">
+    <div id="threadInner">
+      <div id="emptyState">
+        <div class="big">Ready when you are.</div>
+        Press <b>`</b> (or “Start listening”) and ask a question out loud — or type one below.<br>
+        Every question and answer stays here so you can look back over the whole conversation.
+      </div>
+    </div>
+  </div>
+
+  <div id="composer">
+    <div id="composerInner">
+      <input id="askInput" type="text" placeholder="Type a question here and press Enter (handy if a spoken one came out wrong)…">
+      <button id="btnAsk" class="primary">Answer</button>
+    </div>
+  </div>
+</div>
+
+<div id="overlay"></div>
+<div id="drawer">
+  <h3>Settings</h3>
+  <div class="field">
+    <label>Listen to</label>
+    <div class="seg" id="segSource">
+      <button data-src="mic">My microphone</button>
+      <button data-src="system">Other person<br>(computer audio)</button>
+      <button data-src="both">Both</button>
+    </div>
+    <div class="note">“Other person” hears whatever your computer plays — the interviewer on a Teams/Zoom call — with any headphones.</div>
+  </div>
+  <div class="field">
+    <label for="selMic">Microphone</label>
+    <select id="selMic"></select>
+    <div class="meter" style="margin-top:8px"><div class="fill" id="meterFill"></div></div>
+    <div class="note">Speak — the bar should move.</div>
+  </div>
+  <div class="field" id="sysField">
+    <label for="selSystem">Computer audio from</label>
+    <select id="selSystem"></select>
+    <div class="note">Usually your speakers/headphones. Leave on the default.</div>
+  </div>
+  <div class="field">
+    <label>AI model</label>
+    <div id="modelList"></div>
+  </div>
+  <div class="field">
+    <label for="selLanguage">Interview language</label>
+    <select id="selLanguage"></select>
+  </div>
+  <div class="field">
+    <label for="selHotkey">Keyboard shortcut</label>
+    <select id="selHotkey"></select>
+    <div class="note">Works while any app has focus.</div>
+  </div>
+  <div class="field">
+    <label for="selSize">Text size</label>
+    <select id="selSize">
+      <option value="normal">Normal</option>
+      <option value="large">Large</option>
+      <option value="xlarge">Extra large</option>
+    </select>
+  </div>
+  <div class="field">
+    <label>Trouble?</label>
+    <button id="btnRepair">&#128295; Fix it — reconnect everything</button>
+    <div class="note">Reconnects the microphone, the transcription service, and the AI.</div>
+  </div>
+  <div class="field">
+    <label>Danger zone</label>
+    <button id="btnClear" class="danger">Delete all history</button>
+  </div>
+  <div class="field">
+    <label>Advanced</label>
+    <button id="btnPromptDrawer">Edit the raw AI instructions&hellip;</button>
+    <div class="note">Only if you know what you're doing — the Profile fills this in for you.</div>
+  </div>
+  <div class="spacer"></div>
+  <button id="btnCloseDrawer">Close</button>
+</div>
+
+<!-- ---------- setup wizard ---------- -->
+<div id="wizard">
+  <div class="wcard">
+    <div class="wsteps"><span class="ws" id="ws1"></span><span class="ws" id="ws2"></span><span class="ws" id="ws3"></span></div>
+    <div id="wizKeys">
+      <h2 class="wtitle">Welcome! Let's set up in 3 quick steps.</h2>
+      <div class="wsub">The app needs two free-to-create accounts: one that turns speech into text (Deepgram), one that writes the answers (Anthropic). You paste one key from each — that's the whole setup.</div>
+      <div class="costnote"><b>What does it cost?</b> Both services bill only for what you use. A typical 1-hour interview costs about <b>$0.30&ndash;$0.80</b> total. Deepgram gives new accounts free credit to start.</div>
+      <div class="field" style="margin-top:6px">
+        <label>Deepgram key (speech &rarr; text)</label>
+        <div class="keyrow">
+          <input type="password" id="keyDg" placeholder="Paste your Deepgram key here" autocomplete="off">
+          <button id="testDg">Test</button>
+        </div>
+        <div class="kstatus" id="stDg"></div>
+        <details class="howto"><summary>How do I get this key?</summary>
+          <ol>
+            <li>Open <a href="https://console.deepgram.com/signup" target="_blank" rel="noopener">console.deepgram.com/signup</a> and create a free account (Google sign-in works).</li>
+            <li>You start with free credit — no card needed at first.</li>
+            <li>In the left menu click <b>API Keys</b> &rarr; <b>Create a New API Key</b>.</li>
+            <li>Give it any name, click Create, then <b>copy the key</b> and paste it above.</li>
+          </ol>
+        </details>
+      </div>
+      <div class="field">
+        <label>Anthropic key (writes the answers)</label>
+        <div class="keyrow">
+          <input type="password" id="keyAnt" placeholder="Paste your Anthropic key here" autocomplete="off">
+          <button id="testAnt">Test</button>
+        </div>
+        <div class="kstatus" id="stAnt"></div>
+        <details class="howto"><summary>How do I get this key?</summary>
+          <ol>
+            <li>Open <a href="https://console.anthropic.com/" target="_blank" rel="noopener">console.anthropic.com</a> and create an account.</li>
+            <li>Add a small amount of credit under <b>Billing</b> (e.g. $5 — lasts many interviews).</li>
+            <li>Go to <b>API Keys</b> &rarr; <b>Create Key</b>.</li>
+            <li><b>Copy the key</b> (it's shown only once) and paste it above.</li>
+          </ol>
+        </details>
+      </div>
+      <div class="modalBar">
+        <div class="spacer"></div>
+        <button class="primary" id="btnKeysNext">Save keys &amp; continue &rarr;</button>
+      </div>
+    </div>
+    <div id="wizAudio" style="display:none">
+      <h2 class="wtitle">Step 2 — Sound check</h2>
+      <div class="wsub">Pick what the app should listen to, then say something out loud — the bar should move.</div>
+      <div class="field" style="margin-top:8px">
+        <label>Listen to</label>
+        <div class="seg" id="wizSegSource">
+          <button data-src="mic">My microphone</button>
+          <button data-src="system">Other person<br>(computer audio)</button>
+          <button data-src="both">Both</button>
+        </div>
+        <div class="note">On a video call, “Both” hears you <i>and</i> the interviewer. You can change this any time in Settings.</div>
+      </div>
+      <div class="field" style="margin-top:10px">
+        <label>Microphone</label>
+        <select id="wizSelMic"></select>
+        <div class="meter" style="margin-top:10px"><div class="fill" id="wizMeterFill"></div></div>
+        <div class="note">Say “testing, one two three”&hellip;</div>
+      </div>
+      <div class="modalBar" style="margin-top:8px">
+        <div class="spacer"></div>
+        <button class="primary" id="btnAudioNext">The bar moves &mdash; continue &rarr;</button>
+      </div>
+    </div>
+    <div id="wizProfile" style="display:none">
+      <h2 class="wtitle">Step 3 — Tell the AI who you are</h2>
+      <div class="wsub">The more it knows, the more the answers sound like <i>you</i>. Everything stays on your computer. You can edit this any time under “Profile”.</div>
+      <div id="wizProfileForm"></div>
+      <div class="modalBar" style="margin-top:4px">
+        <button class="ghost" id="btnProfileSkip">Skip for now</button>
+        <div class="spacer"></div>
+        <button class="primary" id="btnProfileSave">Save &amp; finish &#10003;</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- first-use tour ---------- -->
+<div id="tour">
+  <div class="tcard">
+    <div class="tstep" id="tourStep">Step 1 of 3</div>
+    <div class="tbig" id="tourTitle"></div>
+    <div class="tbody" id="tourBody"></div>
+    <div class="modalBar">
+      <button class="ghost" id="btnTourSkip">Skip</button>
+      <div class="spacer"></div>
+      <button class="primary" id="btnTourNext">Next &rarr;</button>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- interview profile modal ---------- -->
+<div class="modal" id="profileModal">
+  <div class="modalCard">
+    <h3>Interview profile</h3>
+    <div class="note" style="margin-top:0">This is everything the AI uses to answer as you. It stays on your computer.</div>
+    <div id="profileForm"></div>
+    <div class="modalBar">
+      <button id="btnProfileCancel">Cancel</button>
+      <div class="spacer"></div>
+      <button class="primary" id="btnProfileApply">Save &amp; apply</button>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- saved interviews modal ---------- -->
+<div class="modal" id="savedModal">
+  <div class="modalCard">
+    <h3>Saved interviews</h3>
+    <div id="savedBody"></div>
+    <div class="modalBar"><div class="spacer"></div><button id="btnSavedClose">Close</button></div>
+  </div>
+</div>
+
+<!-- ---------- raw prompt editor (advanced) ---------- -->
+<div class="modal" id="promptModal">
+  <div class="modalCard">
+    <h3>Raw AI instructions <span class="meta" style="font-weight:500">(advanced &mdash; prompt.txt)</span></h3>
+    <div class="note">The exact system prompt the AI follows. Saving applies it immediately. Note: saving the Profile regenerates this file.</div>
+    <textarea id="promptEditor" spellcheck="false"></textarea>
+    <div class="modalBar">
+      <span id="promptDirty">Unsaved changes</span>
+      <div class="spacer"></div>
+      <button id="btnPromptCancel">Cancel</button>
+      <button id="btnPromptSave" class="primary">Save &amp; apply</button>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- conversation viewer ---------- -->
+<div class="modal" id="convoModal">
+  <div class="modalCard">
+    <h3 id="convoTitle">Interview</h3>
+    <div id="convoBody"></div>
+    <div class="modalBar">
+      <button id="btnConvoRename" style="display:none">&#9998; Rename</button>
+      <div class="spacer"></div>
+      <button id="btnConvoClose">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+
+<script>
+(() => {
+  const TOKEN = "__AUTH_TOKEN__";
+  const $ = id => document.getElementById(id);
+  const md = t => DOMPurify.sanitize(marked.parse(t || ""));
+  const pill = $("statusPill"), statusLabel = $("statusLabel");
+  const thread = $("thread"), threadInner = $("threadInner");
+  const toasts = $("toasts");
+  const btnToggle = $("btnToggle"), btnCancel = $("btnCancel"), btnEnd = $("btnEnd");
+
+  marked.setOptions({ breaks: true, mangle: false, headerIds: false });
+
+  let ws = null, wsBackoff = 500;
+  let state = "idle";
+  let configured = null, autoMode = false;
+  let profileData = {}, promptRaw = "";
+  let hotkeyLabels = {};
+
+  // live (in-progress) turn
+  let liveActive = false, liveTurn = 0, liveQ = "", liveAnswer = "", liveAnswering = false;
+  let liveFirstMs = 0, liveStart = 0;
+
+  const api = (path, body) => fetch(path, {
+    method: "POST",
+    headers: body instanceof FormData ? { "x-auth-token": TOKEN }
+      : { "x-auth-token": TOKEN, "content-type": "application/json" },
+    body: body instanceof FormData ? body : JSON.stringify(body),
+  });
+
+  // ---------- websocket ----------
+  function connect() {
+    ws = new WebSocket(`ws://${location.host}/ws?token=${encodeURIComponent(TOKEN)}`);
+    ws.onopen = () => { wsBackoff = 500; $("connBanner").classList.remove("show"); };
+    ws.onmessage = e => handle(JSON.parse(e.data));
+    ws.onclose = () => {
+      $("connBanner").classList.add("show");
+      setTimeout(connect, wsBackoff);
+      wsBackoff = Math.min(wsBackoff * 1.8, 8000);
+    };
+  }
+  const send = cmd => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(cmd)); };
+
+  // ---------- conversation state ----------
+  const turns = [];
+  let sessions = [];
+  let liveQEl = null, liveAEl = null, liveBlockEl = null;
+
+  const nearBottom = () => thread.scrollHeight - thread.scrollTop - thread.clientHeight < 120;
+  const stickBottom = () => { thread.scrollTop = thread.scrollHeight; };
+  // Anchor the current (live) question+answer to the top of the viewport, so
+  // the reader always starts at the first line of the new answer and never
+  // has to scroll up after it finishes generating.
+  const anchorLiveTop = () => {
+    if (!liveBlockEl) return;
+    const c = thread.getBoundingClientRect();
+    const b = liveBlockEl.getBoundingClientRect();
+    thread.scrollTop += (b.top - c.top) - 12;
+  };
+
+  function qaBlock(n, question, answerHtml, meta, opts = {}) {
+    const qa = document.createElement("div");
+    qa.className = "qa" + (opts.live ? " live" : "");
+    const qq = document.createElement("div");
+    qq.className = "qq" + (opts.liveQ ? " live" : "");
+    const qn = document.createElement("span"); qn.className = "qn"; qn.textContent = `Q${n}`;
+    const qt = document.createElement("span"); qt.className = "qtext"; qt.textContent = question;
+    qq.append(qn, qt);
+    if (meta && meta.when) { const w = document.createElement("span"); w.className = "when"; w.textContent = meta.when; qq.appendChild(w); }
+    const aa = document.createElement("div");
+    aa.className = "aa" + (opts.emptyAnswer ? " empty" : "");
+    if (opts.emptyAnswer) aa.textContent = opts.emptyAnswer;
+    else aa.innerHTML = answerHtml;
+    qa.append(qq, aa);
+    if (opts.footer) {
+      const bar = document.createElement("div"); bar.className = "qaBar";
+      const m = document.createElement("span"); m.className = "meta"; m.textContent = opts.footer;
+      bar.appendChild(m);
+      if (opts.copy != null) {
+        const c = document.createElement("button"); c.className = "ghost"; c.textContent = "Copy";
+        c.onclick = async () => { try { await navigator.clipboard.writeText(opts.copy); toast("Copied.", "ok"); } catch {} };
+        bar.appendChild(c);
+      }
+      qa.appendChild(bar);
+    }
+    return { qa, aa };
+  }
+
+  function renderThread() {
+    const wasBottom = nearBottom();
+    threadInner.innerHTML = "";
+    liveQEl = liveAEl = liveBlockEl = null;
+
+    if (!turns.length && !liveActive) {
+      const empty = document.createElement("div");
+      empty.id = "emptyState";
+      empty.innerHTML = `<div class="big">Ready when you are.</div>
+        Press <b>\`</b> (or “Start listening”) and ask a question out loud — or type one below.<br>
+        Every question and answer stays here so you can look back over the whole conversation.`;
+      threadInner.appendChild(empty);
+      return;
+    }
+
+    turns.forEach((t, i) => {
+      const secs = t.elapsed_ms ? `${(t.elapsed_ms / 1000).toFixed(1)}s` : "";
+      const first = t.first_token_ms ? `${(t.first_token_ms / 1000).toFixed(1)}s to first word · ` : "";
+      const { qa } = qaBlock(i + 1, t.question, md(t.answer),
+        { when: t.ts || "" },
+        { footer: secs ? `${first}${secs} total` : "", copy: t.answer });
+      threadInner.appendChild(qa);
+    });
+
+    if (liveActive) {
+      const n = turns.length + 1;
+      const qText = liveQ || (state === "listening" ? "Listening…" : "…");
+      const answering = liveAnswering && liveAnswer;
+      const { qa, aa } = qaBlock(n, qText, md(liveAnswer),
+        null,
+        { live: true, liveQ: !liveQ || state === "listening",
+          emptyAnswer: answering ? null : (state === "answering" ? null : "…") });
+      // caret while streaming
+      if (liveAnswering) {
+        const caret = document.createElement("span");
+        caret.className = "caret";
+        (aa.lastElementChild || aa).appendChild(caret);
+      }
+      threadInner.appendChild(qa);
+      liveQEl = qa.querySelector(".qtext");
+      liveAEl = aa;
+      liveBlockEl = qa;
+    }
+
+    // While a turn is live, keep its top pinned so reading starts at the first
+    // line. Otherwise only follow the bottom if we were already there.
+    if (liveActive) anchorLiveTop();
+    else if (wasBottom) stickBottom();
+  }
+
+  // fast in-place updates during streaming (avoid full re-render each token)
+  function updateLiveQ() { if (liveQEl) { liveQEl.textContent = liveQ || (state === "listening" ? "Listening…" : "…"); } }
+  function updateLiveA() {
+    if (!liveAEl) { renderThread(); return; }
+    // Update in place; do NOT chase the bottom — the answer grows downward
+    // from its pinned top so the reader keeps their place at the start.
+    liveAEl.className = "aa";
+    liveAEl.innerHTML = md(liveAnswer);
+    const caret = document.createElement("span"); caret.className = "caret";
+    (liveAEl.lastElementChild || liveAEl).appendChild(caret);
+  }
+
+  // ---------- status ----------
+  function setState(s) {
+    state = s;
+    pill.className = s === "idle" ? "" : s;
+    statusLabel.textContent = s === "idle" ? "ready" : s;
+    btnToggle.textContent = s === "listening" ? "Stop & answer" : "Start listening";
+    btnToggle.disabled = (s === "thinking" || s === "answering");
+    btnCancel.style.display = (s === "thinking" || s === "answering") ? "" : "none";
+    $("askInput").disabled = s !== "idle";
+    $("btnAsk").disabled = s !== "idle";
+  }
+
+  // ---------- friendly errors ----------
+  const ERROR_INFO = {
+    mic: { title: "Microphone problem", hint: "Check the mic is plugged in and not in use by another app, then click Retry." },
+    deepgram: { title: "Transcription service", hint: "Usually an internet hiccup. Click Retry." },
+    anthropic: { title: "AI service", hint: "Usually temporary. Click Retry." },
+    prompt: { title: "Couldn't save", hint: "" },
+    history: { title: "Couldn't save history", hint: "" },
+    engine: { title: "Something went wrong", hint: "" },
+  };
+  function toast(message, kind = "error", opts = {}) {
+    const el = document.createElement("div");
+    el.className = `toast ${kind}`;
+    const row = document.createElement("div"); row.className = "trow";
+    const col = document.createElement("div");
+    if (opts.title) {
+      const t = document.createElement("div"); t.className = "ttitle"; t.textContent = opts.title; col.appendChild(t);
+      const m = document.createElement("div"); m.className = "tmsg"; m.textContent = message + (opts.hint ? " — " + opts.hint : ""); col.appendChild(m);
+    } else { const m = document.createElement("div"); m.textContent = message; col.appendChild(m); }
+    const x = document.createElement("span"); x.className = "x"; x.innerHTML = "&times;"; x.onclick = () => el.remove();
+    row.append(col, x); el.appendChild(row);
+    if (opts.retry) {
+      const bar = document.createElement("div"); bar.className = "tactions";
+      const b = document.createElement("button"); b.textContent = "Retry";
+      b.onclick = () => { send({ cmd: "repair" }); el.remove(); };
+      bar.appendChild(b); el.appendChild(bar);
+    }
+    toasts.appendChild(el);
+    if (!opts.sticky) setTimeout(() => el.remove(), opts.retry ? 12000 : 6000);
+  }
+
+  // ---------- health ----------
+  const HDOTS = { mic: "hdMic", transcriber: "hdDg", llm: "hdLlm" };
+  const HHELP = {
+    mic: "Your microphone. If red: check it's plugged in and allowed, then use Fix it in Settings.",
+    transcriber: "The speech-to-text connection. If red: check your internet, then use Fix it in Settings.",
+    llm: "The AI that writes answers. If red: check your internet, then use Fix it in Settings.",
+  };
+  Object.entries(HDOTS).forEach(([k, id]) => {
+    $(id).onclick = () => toast(HHELP[k], $(id).classList.contains("error") ? "error" : "ok",
+      { title: $(id).title, retry: $(id).classList.contains("error") });
+  });
+
+  // ---------- conversation viewer ----------
+  const convoModal = $("convoModal"), convoBody = $("convoBody");
+  function openConvo(s) {
+    const n = s.turns.length;
+    $("convoTitle").textContent = `${s.title} — ${n} question${n === 1 ? "" : "s"}` + (s.ended ? ` · ${s.ended}` : "");
+    convoBody.innerHTML = "";
+    s.turns.forEach((t, i) => {
+      const { qa } = qaBlock(i + 1, t.question, md(t.answer), { when: t.ts || "" }, { copy: t.answer, footer: " " });
+      convoBody.appendChild(qa);
+    });
+    const renameBtn = $("btnConvoRename");
+    if (s.session_id != null) { renameBtn.style.display = ""; renameBtn.onclick = () => { renameSession(s); convoModal.classList.remove("open"); }; }
+    else renameBtn.style.display = "none";
+    convoModal.classList.add("open");
+    convoBody.scrollTop = 0;
+  }
+  $("btnConvoClose").onclick = () => convoModal.classList.remove("open");
+  convoModal.onclick = e => { if (e.target === convoModal) convoModal.classList.remove("open"); };
+
+  // ---------- saved interviews ----------
+  const savedModal = $("savedModal"), savedBody = $("savedBody");
+  function renderSaved() {
+    savedBody.innerHTML = "";
+    [...sessions].reverse().forEach(s => {
+      const row = document.createElement("div"); row.className = "savedRow";
+      row.innerHTML = `<div class="si"><div class="st"></div><div class="ss"></div></div>`;
+      row.querySelector(".st").textContent = s.title;
+      row.querySelector(".ss").textContent = `${s.turns.length} question${s.turns.length === 1 ? "" : "s"} · ${s.ended}`;
+      const rn = document.createElement("button"); rn.className = "ghost"; rn.innerHTML = "&#9998;"; rn.title = "Rename";
+      rn.onclick = e => { e.stopPropagation(); renameSession(s); };
+      row.appendChild(rn);
+      row.onclick = () => { savedModal.classList.remove("open"); openConvo(s); };
+      savedBody.appendChild(row);
+    });
+    $("btnSaved").textContent = sessions.length ? `Saved (${sessions.length})` : "Saved";
+  }
+  function renameSession(s) {
+    const name = prompt("Name this interview:", s.title);
+    if (name === null) return;
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === s.title) return;
+    send({ cmd: "rename_session", session_id: s.session_id, title: trimmed });
+  }
+  $("btnSaved").onclick = () => { renderSaved(); savedModal.classList.add("open"); };
+  $("btnSavedClose").onclick = () => savedModal.classList.remove("open");
+  savedModal.onclick = e => { if (e.target === savedModal) savedModal.classList.remove("open"); };
+
+  // ---------- profile form (shared by wizard + modal) ----------
+  const PROFILE_FIELDS = [
+    { key: "about", label: "About you", ph: "e.g. I'm Ada, a customer-support team lead with 4 years' experience…", rows: 2 },
+    { key: "job", label: "The job you're interviewing for", ph: "Company, role, anything you know about the interviewer or format", rows: 2 },
+    { key: "job_description", label: "Job description (paste it)", ph: "Paste the job ad here — or upload it below", rows: 3 },
+    { key: "resume", label: "Your resume", ph: "Paste your resume — or upload the file below", rows: 3 },
+    { key: "extra", label: "Anything else", ph: "Prepared answers, projects you want to mention, things to avoid…", rows: 2 },
+    { key: "keyterms", label: "Names & special terms (comma-separated)", ph: "e.g. Kubernetes, Accenture, Dr. Okafor — helps the app hear them correctly", rows: 1 },
+  ];
+  function buildProfileForm(container, prefix) {
+    container.innerHTML = "";
+    PROFILE_FIELDS.forEach(f => {
+      const div = document.createElement("div"); div.className = "field"; div.style.marginTop = "10px";
+      const label = document.createElement("label"); label.textContent = f.label;
+      const ta = document.createElement("textarea"); ta.id = prefix + f.key; ta.rows = f.rows; ta.placeholder = f.ph;
+      ta.value = profileData[f.key] || "";
+      div.append(label, ta);
+      if (f.key === "resume" || f.key === "job_description") {
+        const up = document.createElement("button"); up.textContent = "⇡ Upload a file (.pdf, .docx, .txt)"; up.style.marginTop = "6px";
+        up.onclick = () => pickFile(text => { ta.value = text; }); div.appendChild(up);
+      }
+      container.appendChild(div);
+    });
+  }
+  function readProfileForm(prefix) {
+    const out = {}; PROFILE_FIELDS.forEach(f => { out[f.key] = ($(prefix + f.key) || { value: "" }).value; }); return out;
+  }
+  function pickFile(onText) {
+    const input = document.createElement("input"); input.type = "file"; input.accept = ".txt,.md,.pdf,.docx";
+    input.onchange = async () => {
+      const file = input.files[0]; if (!file) return;
+      const form = new FormData(); form.append("file", file);
+      try {
+        const res = await api("/api/extract", form); const body = await res.json();
+        if (!res.ok) { toast(body.error || "Could not read the file.", "error"); return; }
+        onText(body.text); toast(`Added ${file.name}.`, "ok");
+      } catch { toast("Upload failed — is the app still running?", "error"); }
+    };
+    input.click();
+  }
+
+  // ---------- wizard ----------
+  const wizard = $("wizard");
+  let wizStep = 0;
+  function showWizard(step) {
+    wizStep = step; wizard.classList.add("open");
+    ["wizKeys", "wizAudio", "wizProfile"].forEach((id, i) => {
+      $(id).style.display = i === step ? "" : "none";
+      $("ws" + (i + 1)).classList.toggle("on", i <= step);
+    });
+    send({ cmd: "mic_test", on: step === 1 });
+    if (step === 2) buildProfileForm($("wizProfileForm"), "wiz_");
+  }
+  function hideWizard() {
+    wizard.classList.remove("open"); send({ cmd: "mic_test", on: false });
+    if (!localStorage.getItem("tourDone")) startTour();
+  }
+  async function testKey(service, inputId, statusId) {
+    const st = $(statusId); st.className = "kstatus"; st.textContent = "Checking…";
+    try {
+      const res = await api("/api/setup/test", { service, key: $(inputId).value });
+      const body = await res.json();
+      st.className = "kstatus " + (body.ok ? "ok" : "bad");
+      st.textContent = body.ok ? "✓ This key works!" : body.error;
+      return body.ok;
+    } catch { st.className = "kstatus bad"; st.textContent = "Could not check — is the app still running?"; return false; }
+  }
+  $("testDg").onclick = () => testKey("deepgram", "keyDg", "stDg");
+  $("testAnt").onclick = () => testKey("anthropic", "keyAnt", "stAnt");
+  $("btnKeysNext").onclick = async () => {
+    const btn = $("btnKeysNext"); btn.disabled = true; btn.textContent = "Checking your keys…";
+    try {
+      const res = await api("/api/setup/keys", { deepgram: $("keyDg").value, anthropic: $("keyAnt").value });
+      const body = await res.json();
+      if (!body.ok) { const st = body.field === "anthropic" ? $("stAnt") : $("stDg"); st.className = "kstatus bad"; st.textContent = body.error || "Something went wrong."; return; }
+      showWizard(1);
+    } catch { toast("Could not save the keys — is the app still running?", "error"); }
+    finally { btn.disabled = false; btn.textContent = "Save keys & continue →"; }
+  };
+  $("btnAudioNext").onclick = () => showWizard(2);
+  $("btnProfileSkip").onclick = () => hideWizard();
+  $("btnProfileSave").onclick = () => { send({ cmd: "set_profile", profile: readProfileForm("wiz_") }); hideWizard(); };
+
+  // ---------- tour ----------
+  const TOUR = [
+    { title: "Ask out loud", body: "Press ` (or click Start listening), then say a question out loud. It appears at the bottom of the conversation. Press ` again to stop and get the answer." },
+    { title: "Everything stays in view", body: "Each answer streams in right below its question, and older ones stay above — just scroll up to re-read anything. No question ever disappears." },
+    { title: "Hands-free & saving", body: "Turn on Hands-free at the top and the app answers by itself when a question ends. When you're done, press End & save to file the whole conversation — find it later under Saved." },
+  ];
+  let tourIdx = 0;
+  function startTour() { tourIdx = 0; renderTour(); $("tour").classList.add("open"); }
+  function renderTour() {
+    $("tourStep").textContent = `Step ${tourIdx + 1} of ${TOUR.length}`;
+    $("tourTitle").textContent = TOUR[tourIdx].title;
+    $("tourBody").textContent = TOUR[tourIdx].body;
+    $("btnTourNext").textContent = tourIdx === TOUR.length - 1 ? "Done ✓" : "Next →";
+  }
+  const endTour = () => { $("tour").classList.remove("open"); localStorage.setItem("tourDone", "1"); };
+  $("btnTourNext").onclick = () => { tourIdx++; tourIdx >= TOUR.length ? endTour() : renderTour(); };
+  $("btnTourSkip").onclick = endTour;
+
+  // ---------- event handling ----------
+  function handle(ev) {
+    switch (ev.type) {
+      case "setup":
+        if (ev.configured === false && configured !== false) showWizard(0);
+        if (ev.configured === true && wizard.classList.contains("open") && wizStep === 0) showWizard(1);
+        configured = ev.configured;
+        break;
+      case "state":
+        setState(ev.state);
+        if (ev.state === "listening") {
+          liveActive = true; liveTurn = ev.turn_id; liveQ = ""; liveAnswer = ""; liveAnswering = false;
+          renderThread();
+        } else if (ev.state === "idle") {
+          // if the live turn didn't commit (empty/cancelled), drop it
+          liveActive = false; liveAnswering = false;
+          renderThread();
+        }
+        break;
+      case "interim":
+        if (ev.turn_id === liveTurn && liveActive) { liveQ = ev.text; updateLiveQ(); }
+        break;
+      case "transcript":
+        // spoken final OR typed question (typed asks emit transcript at THINKING)
+        if (!liveActive || liveTurn !== ev.turn_id) {
+          liveActive = true; liveTurn = ev.turn_id; liveAnswer = ""; liveAnswering = false;
+        }
+        liveQ = ev.text; renderThread();
+        break;
+      case "answer_delta":
+        if (!liveActive || liveTurn !== ev.turn_id) { liveActive = true; liveTurn = ev.turn_id; liveAnswer = ""; }
+        if (!liveAnswering) { liveAnswering = true; renderThread(); }
+        liveAnswer += ev.text; updateLiveA();
+        break;
+      case "answer_done":
+        if (ev.text) { liveAnswer = ev.text; }
+        liveAnswering = false;
+        // Finalize in place — no scroll, so the view stays anchored at the
+        // top of this answer (reader keeps their place at the first line).
+        if (liveAEl) { liveAEl.className = "aa"; liveAEl.innerHTML = md(liveAnswer); }
+        if (ev.cancelled) toast("Answer cancelled.", "ok");
+        break;
+      case "history": {
+        turns.length = 0; turns.push(...ev.turns);
+        sessions = ev.sessions || [];
+        // if the live turn is now committed, stop showing the live block
+        if (liveActive && turns.some(t => t.turn_id === liveTurn)) liveActive = false;
+        renderThread();
+        renderSaved();
+        btnEnd.disabled = !turns.length;
+        break;
+      }
+      case "error": {
+        const info = ERROR_INFO[ev.scope] || ERROR_INFO.engine;
+        const retry = ["mic", "deepgram", "anthropic"].includes(ev.scope);
+        toast(ev.message, "error", { title: info.title, hint: info.hint, retry, sticky: !ev.recoverable });
+        break;
+      }
+      case "health":
+        Object.entries(HDOTS).forEach(([k, id]) => { $(id).className = "hdot " + (ev[k] || "off"); });
+        break;
+      case "level": {
+        const w = Math.min(100, Math.round(ev.value * 130)) + "%";
+        $("meterFill").style.width = w; $("wizMeterFill").style.width = w;
+        break;
+      }
+      case "devices": renderDevices(ev); break;
+      case "config": renderConfig(ev); break;
+      case "ready": toast("✓ Ready.", "ok"); break;
+      case "profile":
+        profileData = ev.profile || {};
+        if (ev.saved) toast("Profile saved — the AI now answers as you.", "ok");
+        break;
+      case "prompt":
+        promptRaw = ev.text;
+        if (ev.saved) { toast("Instructions saved and applied.", "ok"); if (promptModal.classList.contains("open")) closePromptModal(); }
+        else if (promptModal.classList.contains("open") && !promptIsDirty()) promptEditor.value = promptRaw;
+        break;
+    }
+  }
+
+  // ---------- devices & source ----------
+  function fillSelect(sel, items, selected) {
+    sel.innerHTML = "";
+    items.forEach(d => {
+      const o = document.createElement("option");
+      o.value = d.index; o.textContent = d.name + (d.default ? "  (default)" : "");
+      if (d.index === selected || (selected == null && d.default)) o.selected = true;
+      sel.appendChild(o);
+    });
+  }
+  function renderDevices(ev) {
+    fillSelect($("selMic"), ev.mics, ev.selected_mic);
+    fillSelect($("wizSelMic"), ev.mics, ev.selected_mic);
+    fillSelect($("selSystem"), ev.loopbacks, ev.selected_system);
+    $("sysField").style.display = ev.source === "mic" ? "none" : "";
+    [$("segSource"), $("wizSegSource")].forEach(seg => {
+      seg.querySelectorAll("button").forEach(b => {
+        b.classList.toggle("on", b.dataset.src === ev.source);
+        if (b.dataset.src !== "mic" && !ev.has_loopback) { b.disabled = true; b.title = "Computer-audio capture isn't available on this machine."; }
+      });
+    });
+  }
+  [$("segSource"), $("wizSegSource")].forEach(seg => {
+    seg.addEventListener("click", e => { const b = e.target.closest("button"); if (b && !b.disabled) send({ cmd: "set_source", source: b.dataset.src }); });
+  });
+  $("selMic").onchange = e => send({ cmd: "set_mic_device", index: parseInt(e.target.value, 10) });
+  $("wizSelMic").onchange = e => send({ cmd: "set_mic_device", index: parseInt(e.target.value, 10) });
+  $("selSystem").onchange = e => send({ cmd: "set_system_device", index: parseInt(e.target.value, 10) });
+
+  // ---------- config ----------
+  function renderConfig(ev) {
+    const list = $("modelList"); list.innerHTML = "";
+    ev.models.forEach(m => {
+      const el = document.createElement("div");
+      el.className = "modelOpt" + (m.id === ev.model ? " on" : "");
+      el.innerHTML = `<div><div class="ml"></div><div class="mb"></div></div>`;
+      el.querySelector(".ml").textContent = m.label; el.querySelector(".mb").textContent = m.blurb;
+      el.title = m.id; el.onclick = () => send({ cmd: "set_model", model: m.id });
+      list.appendChild(el);
+    });
+    const selH = $("selHotkey"); selH.innerHTML = ""; hotkeyLabels = {};
+    ev.hotkeys.forEach(h => {
+      hotkeyLabels[h.id] = h.label;
+      const o = document.createElement("option"); o.value = h.id; o.textContent = h.label;
+      if (h.id === ev.hotkey) o.selected = true; selH.appendChild(o);
+    });
+    $("hotkeyHint").textContent = (hotkeyLabels[ev.hotkey] || ev.hotkey).replace(/ \(.*\)/, "");
+    const selL = $("selLanguage"); selL.innerHTML = "";
+    ev.languages.forEach(l => { const o = document.createElement("option"); o.value = l.id; o.textContent = l.label; if (l.id === ev.language) o.selected = true; selL.appendChild(o); });
+    autoMode = !!ev.auto_mode;
+    $("autoToggle").classList.toggle("on", autoMode);
+  }
+  $("selHotkey").onchange = e => send({ cmd: "set_hotkey", hotkey: e.target.value });
+  $("selLanguage").onchange = e => send({ cmd: "set_language", language: e.target.value });
+  $("autoToggle").onclick = () => send({ cmd: "set_auto", on: !autoMode });
+
+  // ---------- text size ----------
+  const savedSize = localStorage.getItem("textSize") || "normal";
+  document.documentElement.dataset.size = savedSize;
+  $("selSize").value = savedSize;
+  $("selSize").onchange = e => { document.documentElement.dataset.size = e.target.value; localStorage.setItem("textSize", e.target.value); };
+
+  // ---------- controls ----------
+  btnToggle.onclick = () => send({ cmd: "toggle" });
+  btnCancel.onclick = () => send({ cmd: "cancel" });
+  btnEnd.onclick = () => {
+    if (!turns.length) return;
+    send({ cmd: "end_session" });
+    toast("Interview saved. Find it under “Saved”.", "ok");
+  };
+  $("btnClear").onclick = () => {
+    if (!turns.length && !sessions.length) { toast("Nothing to delete.", "ok"); return; }
+    if (confirm("Delete ALL history — the current conversation and every saved interview?")) send({ cmd: "clear_history" });
+  };
+  const doAsk = () => {
+    const text = $("askInput").value.trim();
+    if (!text || state !== "idle") return;
+    $("askInput").value = ""; send({ cmd: "ask", text });
+  };
+  $("btnAsk").onclick = doAsk;
+  $("askInput").addEventListener("keydown", e => { if (e.key === "Enter") doAsk(); });
+  $("btnRepair").onclick = () => { send({ cmd: "repair" }); toast("Reconnecting everything…", "ok"); };
+
+  const drawer = $("drawer"), overlay = $("overlay");
+  const setDrawer = open => {
+    drawer.classList.toggle("open", open); overlay.classList.toggle("open", open);
+    send({ cmd: "mic_test", on: open && state === "idle" });
+  };
+  $("btnSettings").onclick = () => setDrawer(true);
+  $("btnCloseDrawer").onclick = () => setDrawer(false);
+  overlay.onclick = () => setDrawer(false);
+
+  // ---------- profile modal ----------
+  const profileModal = $("profileModal");
+  $("btnProfile").onclick = () => { buildProfileForm($("profileForm"), "pf_"); profileModal.classList.add("open"); };
+  $("btnProfileCancel").onclick = () => profileModal.classList.remove("open");
+  $("btnProfileApply").onclick = () => { send({ cmd: "set_profile", profile: readProfileForm("pf_") }); profileModal.classList.remove("open"); };
+  profileModal.onclick = e => { if (e.target === profileModal) profileModal.classList.remove("open"); };
+
+  // ---------- raw prompt editor ----------
+  const promptModal = $("promptModal"), promptEditor = $("promptEditor");
+  const promptIsDirty = () => promptEditor.value !== promptRaw;
+  const updateDirty = () => $("promptDirty").classList.toggle("show", promptIsDirty());
+  function openPromptModal() { setDrawer(false); promptEditor.value = promptRaw; updateDirty(); promptModal.classList.add("open"); promptEditor.focus(); }
+  function closePromptModal() { promptModal.classList.remove("open"); updateDirty(); }
+  $("btnPromptDrawer").onclick = openPromptModal;
+  $("btnPromptCancel").onclick = () => { if (promptIsDirty() && !confirm("Discard unsaved changes?")) return; closePromptModal(); };
+  promptModal.onclick = e => { if (e.target === promptModal) $("btnPromptCancel").onclick(); };
+  $("btnPromptSave").onclick = () => { if (!promptEditor.value.trim()) { toast("The instructions cannot be empty.", "error"); return; } send({ cmd: "set_prompt", text: promptEditor.value }); };
+  promptEditor.addEventListener("input", updateDirty);
+
+  // ---------- keyboard ----------
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape") {
+      for (const m of [convoModal, savedModal, profileModal]) if (m.classList.contains("open")) { m.classList.remove("open"); return; }
+      if (promptModal.classList.contains("open")) { $("btnPromptCancel").onclick(); return; }
+      setDrawer(false);
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === "s" && promptModal.classList.contains("open")) { e.preventDefault(); $("btnPromptSave").onclick(); }
+  });
+
+  connect();
+})();
+</script>
+</body>
+</html>

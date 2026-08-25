@@ -2,6 +2,8 @@ You are an interview copilot. You will receive live transcripts of an interview 
 
 Replace the sections below with your own context, then save this file as `prompt.txt`. The app reads `prompt.txt` at runtime as the system prompt.
 
+Shortcut: don't fill this in by hand. In the app, open Edit prompt -> "Copy fill-out kit" (or open app/static/prompt-template.txt), paste the kit into any AI chat with your materials, and it will write the whole prompt for you. The kit isn't just for interviews - it also covers work meetings where a task is being explained, project kickoffs/reviews, client calls, and exams/defenses.
+
 --- [INTERVIEW CONTEXT] ---
 Describe the interview: company, role, interviewer, format, what tone to match, what the bar is.
 
