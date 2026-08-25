@@ -1,3 +1,4 @@
+import io
 import logging
 import logging.handlers
 import sys
@@ -10,6 +11,29 @@ from app.hotkeys import HotkeyManager
 from app.server import create_app, find_free_port
 
 log = logging.getLogger("app")
+
+
+class _NullStream(io.TextIOBase):
+    """Stand-in for a missing console stream. A windowless PyInstaller build
+    gives the process no stdout/stderr (they are None), and libraries like
+    uvicorn call sys.stderr.isatty() during setup — which crashes on None.
+    """
+    def write(self, *_a):
+        return 0
+
+    def flush(self):
+        pass
+
+    def isatty(self):
+        return False
+
+
+def _ensure_streams():
+    """Guarantee stdout/stderr exist so third-party code can't crash on None."""
+    if sys.stdout is None:
+        sys.stdout = _NullStream()
+    if sys.stderr is None:
+        sys.stderr = _NullStream()
 
 
 def _setup_logging(log_path):
@@ -59,6 +83,7 @@ def _start_tray(url: str, stop):
 
 
 def main():
+    _ensure_streams()  # must run before uvicorn/other libs touch stdout/stderr
     config = load_config()
     _setup_logging(config.log_path)
 
@@ -75,7 +100,12 @@ def main():
     hotkeys = HotkeyManager(engine, config.hotkey)
     engine.on_hotkey_change = hotkeys.set_combo
 
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    # log_config=None: don't let uvicorn build its own console logging (it
+    # inspects sys.stderr and assumes a real terminal). Its loggers propagate
+    # to our root file handler instead.
+    server = uvicorn.Server(uvicorn.Config(
+        app, host="127.0.0.1", port=port, log_level="warning", log_config=None,
+    ))
 
     def stop():
         server.should_exit = True
